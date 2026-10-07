@@ -11,7 +11,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 @ApiTags('cod')
 @ApiBearerAuth()
 @UseGuards(RolesGuard)
-@Roles(Role.SUPER_ADMIN, Role.ADMIN)
+@Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.FINANCE)
 @Controller('cod')
 export class CodController {
   constructor(private readonly cod: CodService) {}

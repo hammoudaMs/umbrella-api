@@ -5,7 +5,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { DeliveryMode, ParcelStatus, Prisma, Role } from '@prisma/client';
+import {
+  ApprovalStatus,
+  DeliveryMode,
+  ParcelStatus,
+  Prisma,
+  Role,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NavexService } from '../navex/navex.service';
 import { DeliveryRoutesService } from '../delivery-routes/delivery-routes.service';
@@ -530,7 +536,9 @@ export class ParcelsService {
   private async scopeFor(
     user: AuthUser,
   ): Promise<Prisma.ParcelWhereInput | null> {
-    if (isGlobalStaff(user.role)) return NOT_DELETED;
+    if (isGlobalStaff(user.role) || user.role === Role.FINANCE) {
+      return NOT_DELETED;
+    }
 
     if (isAgencyRole(user.role)) {
       const agencyId =
@@ -583,7 +591,27 @@ export class ParcelsService {
       include: PARCEL_DETAIL_INCLUDE,
     });
     if (!parcel) throw new NotFoundException('Parcel not found');
-    return toParcelDetailView(parcel);
+    const view = toParcelDetailView(parcel);
+    const recipientUser = await this.prisma.user.findFirst({
+      where: {
+        role: Role.CLIENT,
+        phone: parcel.phone,
+        isActive: true,
+        approvalStatus: ApprovalStatus.APPROVED,
+      },
+      select: { id: true, name: true, phone: true },
+    });
+    return {
+      ...view,
+      recipientUserId: recipientUser?.id ?? null,
+      recipientUser: recipientUser
+        ? {
+            id: recipientUser.id,
+            name: recipientUser.name,
+            phone: recipientUser.phone,
+          }
+        : null,
+    };
   }
 
   async assignDriver(user: AuthUser, id: number, dto: AssignDriverDto) {

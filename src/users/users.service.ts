@@ -25,6 +25,7 @@ const ADMIN_CREATABLE: Role[] = [
   Role.LIVREUR,
   Role.CLIENT,
   Role.ADMIN,
+  Role.FINANCE,
   Role.SUPPORT,
   Role.PICKUP,
   Role.MAGASINIER,

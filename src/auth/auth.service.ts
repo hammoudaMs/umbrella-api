@@ -20,6 +20,7 @@ export const PORTAL_BY_ROLE: Record<Role, string> = {
   SUPPORT: '/support',
   PICKUP: '/pickup',
   MAGASINIER: '/magasinier',
+  FINANCE: '/finance',
   EXPEDITEUR: '/expediteur',
   LIVREUR: '/livreur',
   CLIENT: '/client',

@@ -17,7 +17,7 @@ import {
   UpdatePaymentStatusDto,
 } from './dto/payment.dto';
 
-const STAFF: Role[] = [Role.SUPER_ADMIN, Role.ADMIN];
+const STAFF: Role[] = [Role.SUPER_ADMIN, Role.ADMIN, Role.FINANCE];
 const PAYABLE: ParcelStatus[] = [
   ParcelStatus.LIVRES,
   ParcelStatus.LIVRES_PAYES,

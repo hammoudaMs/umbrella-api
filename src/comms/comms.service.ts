@@ -8,7 +8,9 @@ import { ConfigService } from '@nestjs/config';
 import {
   ApprovalStatus,
   CallStatus,
+  ParcelStatus,
   Prisma,
+  Role,
 } from '@prisma/client';
 import { createHmac } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -30,6 +32,13 @@ const PERSON = {
   phone: true,
 } satisfies Prisma.UserSelect;
 
+const OPEN_DIRECTORY: Role[] = [
+  Role.SUPER_ADMIN,
+  Role.ADMIN,
+  Role.CHEF_AGENCE,
+  Role.SUPPORT,
+];
+
 @Injectable()
 export class CommsService {
   constructor(
@@ -47,21 +56,204 @@ export class CommsService {
     return hit;
   }
 
+  private async hasSharedDelivery(
+    livreurId: number,
+    clientPhone: string,
+    parcelId?: number,
+  ) {
+    const count = await this.prisma.parcel.count({
+      where: {
+        status: { not: ParcelStatus.SUPPRIME },
+        driverId: livreurId,
+        phone: clientPhone,
+        ...(parcelId != null ? { id: parcelId } : {}),
+      },
+    });
+    return count > 0;
+  }
+
+  private async assertCanMessagePeer(
+    user: AuthUser,
+    peer: { id: number; role: Role; phone: string | null },
+    parcelId?: number,
+  ) {
+    const pair = [user.role, peer.role] as const;
+    const isLivreurClient =
+      (pair[0] === Role.LIVREUR && pair[1] === Role.CLIENT) ||
+      (pair[0] === Role.CLIENT && pair[1] === Role.LIVREUR);
+
+    if (!isLivreurClient) return;
+
+    const livreurId = user.role === Role.LIVREUR ? user.id : peer.id;
+    const client =
+      user.role === Role.CLIENT
+        ? await this.prisma.user.findUnique({
+            where: { id: user.id },
+            select: { phone: true },
+          })
+        : { phone: peer.phone };
+
+    if (!client?.phone) {
+      throw new ForbiddenException(
+        'Compte client sans téléphone — messagerie indisponible',
+      );
+    }
+
+    const linked = await this.hasSharedDelivery(
+      livreurId,
+      client.phone,
+      parcelId,
+    );
+    if (!linked) {
+      throw new ForbiddenException(
+        'Messagerie réservée aux colis partagés livreur ↔ client',
+      );
+    }
+  }
+
+  async peerForParcel(user: AuthUser, parcelId: number) {
+    const parcel = await this.prisma.parcel.findFirst({
+      where: {
+        id: parcelId,
+        status: { not: ParcelStatus.SUPPRIME },
+      },
+      select: {
+        id: true,
+        code: true,
+        phone: true,
+        driverId: true,
+        senderId: true,
+      },
+    });
+    if (!parcel) throw new NotFoundException('Parcel not found');
+
+    if (user.role === Role.LIVREUR) {
+      if (parcel.driverId !== user.id) throw new ForbiddenException();
+      const peer = await this.prisma.user.findFirst({
+        where: {
+          role: Role.CLIENT,
+          phone: parcel.phone,
+          isActive: true,
+          approvalStatus: ApprovalStatus.APPROVED,
+        },
+        select: PERSON,
+      });
+      if (!peer) {
+        throw new NotFoundException(
+          'Aucun compte client Umbrella pour ce destinataire',
+        );
+      }
+      return { parcelId: parcel.id, parcelCode: parcel.code, peer };
+    }
+
+    if (user.role === Role.CLIENT) {
+      const me = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { phone: true },
+      });
+      if (!me?.phone || me.phone !== parcel.phone) {
+        throw new ForbiddenException();
+      }
+      if (!parcel.driverId) {
+        throw new NotFoundException('Aucun livreur assigné à ce colis');
+      }
+      const peer = await this.prisma.user.findFirst({
+        where: {
+          id: parcel.driverId,
+          role: Role.LIVREUR,
+          isActive: true,
+          approvalStatus: ApprovalStatus.APPROVED,
+        },
+        select: PERSON,
+      });
+      if (!peer) throw new NotFoundException('Livreur introuvable');
+      return { parcelId: parcel.id, parcelCode: parcel.code, peer };
+    }
+
+    throw new ForbiddenException();
+  }
+
   async directory(user: AuthUser, query: DirectoryQueryDto) {
     const q = query.q?.trim();
+    const textFilter: Prisma.UserWhereInput | undefined = q
+      ? {
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { email: { contains: q, mode: 'insensitive' } },
+            { phone: { contains: q } },
+          ],
+        }
+      : undefined;
+
+    if (user.role === Role.LIVREUR) {
+      const phones = await this.prisma.parcel.findMany({
+        where: {
+          driverId: user.id,
+          status: { not: ParcelStatus.SUPPRIME },
+        },
+        select: { phone: true },
+        distinct: ['phone'],
+      });
+      const phoneList = phones.map((p) => p.phone).filter(Boolean);
+      if (!phoneList.length) return [];
+      return this.prisma.user.findMany({
+        where: {
+          id: { not: user.id },
+          role: Role.CLIENT,
+          phone: { in: phoneList },
+          isActive: true,
+          approvalStatus: ApprovalStatus.APPROVED,
+          ...(textFilter ?? {}),
+        },
+        select: PERSON,
+        orderBy: { name: 'asc' },
+        take: 40,
+      });
+    }
+
+    if (user.role === Role.CLIENT) {
+      const me = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { phone: true },
+      });
+      if (!me?.phone) return [];
+      const drivers = await this.prisma.parcel.findMany({
+        where: {
+          phone: me.phone,
+          driverId: { not: null },
+          status: { not: ParcelStatus.SUPPRIME },
+        },
+        select: { driverId: true },
+        distinct: ['driverId'],
+      });
+      const driverIds = drivers
+        .map((d) => d.driverId)
+        .filter((id): id is number => id != null);
+      if (!driverIds.length) return [];
+      return this.prisma.user.findMany({
+        where: {
+          id: { in: driverIds.filter((id) => id !== user.id) },
+          role: Role.LIVREUR,
+          isActive: true,
+          approvalStatus: ApprovalStatus.APPROVED,
+          ...(textFilter ?? {}),
+        },
+        select: PERSON,
+        orderBy: { name: 'asc' },
+        take: 40,
+      });
+    }
+
     const where: Prisma.UserWhereInput = {
       id: { not: user.id },
       isActive: true,
       approvalStatus: ApprovalStatus.APPROVED,
-      ...(q
-        ? {
-            OR: [
-              { name: { contains: q, mode: 'insensitive' } },
-              { email: { contains: q, mode: 'insensitive' } },
-              { phone: { contains: q } },
-            ],
-          }
-        : {}),
+      ...(OPEN_DIRECTORY.includes(user.role)
+        ? {}
+        : user.role === Role.EXPEDITEUR
+          ? { role: { in: [Role.LIVREUR, Role.SUPPORT, Role.ADMIN] } }
+          : { role: { in: [Role.EXPEDITEUR, Role.LIVREUR, Role.CLIENT] } }),
+      ...(textFilter ?? {}),
     };
     return this.prisma.user.findMany({
       where,
@@ -138,6 +330,8 @@ export class CommsService {
       });
       if (!parcel) throw new NotFoundException('Parcel not found');
     }
+
+    await this.assertCanMessagePeer(user, peer, dto.parcelId);
 
     const existing = await this.prisma.conversation.findFirst({
       where: {

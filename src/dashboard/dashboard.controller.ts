@@ -20,6 +20,7 @@ export class DashboardController {
   @Roles(
     Role.SUPER_ADMIN,
     Role.ADMIN,
+    Role.FINANCE,
     Role.CHEF_AGENCE,
     Role.SUPPORT,
     Role.PICKUP,
@@ -36,6 +37,7 @@ export class DashboardController {
   @Roles(
     Role.SUPER_ADMIN,
     Role.ADMIN,
+    Role.FINANCE,
     Role.CHEF_AGENCE,
     Role.SUPPORT,
     Role.PICKUP,

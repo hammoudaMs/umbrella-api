@@ -35,7 +35,8 @@ type UserKey =
   | 'chef'
   | 'support'
   | 'pickup'
-  | 'magasinier';
+  | 'magasinier'
+  | 'finance';
 type ZoneKey = 'tunis' | 'sahel' | 'sfax';
 type AgencyKey = 'tunis' | 'sousse' | 'sfax';
 
@@ -142,6 +143,14 @@ const USERS: SeedUser[] = [
     phone: '23000004',
     password: 'Magasin@12345',
     agency: 'tunis',
+  },
+  {
+    key: 'finance',
+    name: 'Finance Umbrella',
+    email: 'finance@umbrella.tn',
+    role: Role.FINANCE,
+    phone: '24000001',
+    password: 'Finance@12345',
   },
 ];
 
@@ -683,8 +692,33 @@ async function main() {
     })),
   });
 
+  const chatParcelId =
+    parcelIds['UMB-COURS-001'] ??
+    Object.values(parcelIds).find((id) => id != null);
+  const chatAt = daysAgo(0);
+  chatAt.setMinutes(chatAt.getMinutes() - 15);
+  const conversation = await prisma.conversation.create({
+    data: {
+      parcelId: chatParcelId ?? null,
+      lastMessageAt: chatAt,
+      participants: {
+        create: [
+          { userId: userIds.livreur, lastReadAt: chatAt },
+          { userId: userIds.client },
+        ],
+      },
+      messages: {
+        create: {
+          senderId: userIds.livreur,
+          body: 'Bonjour, je suis en route pour votre livraison.',
+          createdAt: chatAt,
+        },
+      },
+    },
+  });
+
   console.log(
-    `Seeded ${USERS.length} users, ${AGENCIES.length} agencies, ${ZONES.length} zones, ${PARCELS.length} parcels, ${TICKETS.length} tickets, ${PAYMENTS.length} payments, ${DEFAULT_STATUS_CATEGORIES.length} status categories.`,
+    `Seeded ${USERS.length} users, ${AGENCIES.length} agencies, ${ZONES.length} zones, ${PARCELS.length} parcels, ${TICKETS.length} tickets, ${PAYMENTS.length} payments, ${DEFAULT_STATUS_CATEGORIES.length} status categories, conversation #${conversation.id} (livreur↔client).`,
   );
   for (const u of USERS) console.log(`  ${u.email.padEnd(26)} ${u.password}`);
 }

@@ -86,7 +86,11 @@ export class DashboardService {
   async statusCounts(user: AuthUser) {
     let where: Record<string, unknown>;
 
-    if (user.role === Role.SUPER_ADMIN || user.role === Role.ADMIN) {
+    if (
+      user.role === Role.SUPER_ADMIN ||
+      user.role === Role.ADMIN ||
+      user.role === Role.FINANCE
+    ) {
       where = { status: { not: ParcelStatus.SUPPRIME } };
     } else if (
       user.role === Role.CHEF_AGENCE ||
@@ -154,6 +158,7 @@ export class DashboardService {
     const allowed: Role[] = [
       Role.SUPER_ADMIN,
       Role.ADMIN,
+      Role.FINANCE,
       Role.CHEF_AGENCE,
       Role.SUPPORT,
       Role.PICKUP,

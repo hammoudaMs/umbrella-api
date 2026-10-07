@@ -42,6 +42,14 @@ export class CommsController {
     return this.comms.listConversations(user);
   }
 
+  @Get('conversations/peer-for-parcel/:parcelId')
+  peerForParcel(
+    @CurrentUser() user: AuthUser,
+    @Param('parcelId', ParseIntPipe) parcelId: number,
+  ) {
+    return this.comms.peerForParcel(user, parcelId);
+  }
+
   @Post('conversations')
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateConversationDto) {
     return this.comms.createConversation(user, dto);

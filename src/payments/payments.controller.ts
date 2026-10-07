@@ -37,13 +37,13 @@ export class PaymentsController {
 
   @Get()
   @UseGuards(RolesGuard)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.EXPEDITEUR)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.FINANCE, Role.EXPEDITEUR)
   list(@CurrentUser() user: { id: number; role: Role; email: string }) {
     return this.payments.list(user);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(Role.SUPER_ADMIN, Role.ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.ADMIN, Role.FINANCE)
   @Patch(':id/status')
   updateStatus(
     @CurrentUser() user: { id: number; role: Role; email: string },
